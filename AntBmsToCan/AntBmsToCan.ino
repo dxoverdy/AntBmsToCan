@@ -1,95 +1,137 @@
 /*
+Name:		AntBmsToCan.ino
+Created:	11/Oct/2023
+Author:		Daniel Young
 
-Copyright (C) 2023  "Daniel Young" <daniel@mydan.com>
-License: GPL Version 3
+This file is part of AntBmsToCan which is released under GNU GENERAL PUBLIC LICENSE.
+See file LICENSE or go to https://choosealicense.com/licenses/gpl-3.0/ for full license details.
+
+Notes
+
+First, go and customise settings at the top of this script until you see END OF BASIC SETTINGS!
+
+With thanks to the following whose heavy lifting both inspired this particular development:
+Sebastian Muszynski - https://github.com/syssi/esphome-ant-bms
+JuWorkshop - https://github.com/JuWorkshop/AntBms-to-Ve.Can-Victron-Venus
+SetFireLabs - https://www.setfirelabs.com/green-energy/pylontech-can-reading-can-replication
 
 */
 
-#define USE_MCP_CAN
-//#define USE_WIFI_AND_MQTT
-
-
-#ifdef USE_MCP_CAN
 #include <SPI.h>
 #include <mcp_can.h>
-#endif
 
+
+// START OF BASIC SETTINGS
+
+// If you want to use WiFi to report information temporarily to an MQTT broker, uncomment the following line
+// DO NOT USE OUTSIDE OF TESTING - YOU DON'T WANT YOUR INVERTER GOING INTO ERROR JUST BECAUSE WIFI OR MQTT WAS UNAVAILABLE!
+//#define USE_WIFI_AND_MQTT
 
 #ifdef USE_WIFI_AND_MQTT
 #include <WiFi.h>
 #include <PubSubClient.h>
-#endif
 
-
-// User Parameters
-
-// Set CS to GPIO5
-#define MCP2515_CS 5
-// Set INT to GPIO4 (Not needed, but coded in anyway)
-#define MCP2515_INT 26
-
-// If you don't want to poll the BMS and send to CAN unless a pin is given 3.3v, leave this as is
-//#define USE_SHORTING_PIN
-#define SHORTING_PIN 13
-
-//2575
-// "Charge Voltage Limit (CVL)" - This is multiplied by the number of cells in the BMS      (ChargeVsetpoint), i.e. 22 * 2575 = 56650 / 1000 = 56.65 V
-#define CHARGE_VOLTAGE_LIMIT_CVL_IN_MILLIVOLTS 2618
-
-// "Charge Current Limit (CCL)" : max charge current in 0.1A (chargecurrent)  i.e. 400 = 40A
-#define CHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP 400
-
-// "Discharge Current Limit (DCL)" : max discharge current in 0.1A (discurrent) i.e. 400 = 40A
-#define DISCHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP 400 
-
-// "Max Cell Voltage" max cell voltage in mv (MaxCellVoltage)
-// #define MAX_CELL_VOLTAGE_IN_MILLIVOLTS 2575
-
-// "Discharge Voltage Limit (DVL)" = - This is multiplied by the number of cells in the BMS      (DischVsetpoint), i.e. 22 * 2000 = 44 V
-// #define DISCHARGE_VOLTAGE_LIMIT_DVL_IN_MILLIVOLTS 1900
-#define DISCHARGE_VOLTAGE_LIMIT_DVL_IN_MILLIVOLTS 1950
-
-// Even if no BMS response.. send MQTT and print
-#define PRINT_SERIAL_AND_SEND_MQTT_ANYWAY true
-
-// Unsure if needed at this point
-#define SUPPORTS_NEW_COMMANDS false
-
-// For debugging, uses a fixed message customisable in readBms()
-#define USE_FIXED_MESSAGE_FOR_DEBUGGING false
-
-
-#ifdef USE_WIFI_AND_MQTT
-// Update with Wifi details
-/*
+// Update with your WiFi Access Point details
 #define WIFI_SSID		"NoDeal"
-#define WIFI_PASSWORD	"J6786yyy6786"
+#define WIFI_PASSWORD	""
 
 // Update with your MQTT Broker details
 #define MQTT_SERVER	"192.168.1.253"
 #define MQTT_PORT	1883
 #define MQTT_USERNAME	"battery"			// Empty string for none.
 #define MQTT_PASSWORD	"Switch1"
-*/
-
-#define WIFI_SSID		"Stardust"
-#define WIFI_PASSWORD	""
-
-// Update with your MQTT Broker details
-#define MQTT_SERVER	"192.168.1.135"
-#define MQTT_PORT	1883
-#define MQTT_USERNAME	"Alpha"			// Empty string for none.
-#define MQTT_PASSWORD	"Inverter1"
-
 
 // The device name is used as the MQTT base topic and presence on the network.
 // If you need more than one AntBmsToCan on your network, give them unique names.
 #define DEVICE_NAME "AntBmsToCan"
+#endif
+
+
+// "Charge Voltage Limit (CVL)"
+// This is the millivolts representing max charge of an individual cell.
+// For example, this was built for an LTO setup of 22 in series, where the max voltage per cell was requested at 2.618V
+// The number here is multiplied by the number of cells reported by the BMS to give a maximum voltage.
+// (ChargeVsetpoint), i.e. 22 * 2618 = 57596 / 1000 = 57.596 V
+#define CHARGE_VOLTAGE_LIMIT_CVL_IN_MILLIVOLTS 2618
+
+
+// "Charge Current Limit (CCL)"
+// This is the max charge current in 0.1A (tenths) of an amp.
+// (chargecurrent), i.e. 400 = 40A
+#define CHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP 400
+
+// "Discharge Current Limit (DCL)"
+// This is the max discharge current in 0.1A (tenths) of an amp.
+// (discurrent), i.e. 400 = 40A
+#define DISCHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP 400 
+
+// "Discharge Voltage Limit (DVL)"
+// This is the millivolts representing min charge of an individual cell.
+// For example, this was built for an LTO setup of 22 in series, where the min voltage per cell was requested at 1.950V
+// The number here is multiplied by the number of cells reported by the BMS to give a minimum voltage.
+// (DischVsetpoint), i.e. 22 * 1950 = 42900 / 1000 = 42.900 V
+#define DISCHARGE_VOLTAGE_LIMIT_DVL_IN_MILLIVOLTS 1950
+
+// How frequently to poll BMS information and send via CAN
+// Default, 1 second (though could be made less frequent)
+#define BMS_QUERY_INTERVAL 1000
+
+// END OF BASIC SETTINGS
+
+
+
+
+
+// START OF ADVANCED SETTINGS
+
+// How long to wait before we give up waiting for a BMS response
+// Default 250 (1/4 second)
+#define BMS_TIMEOUT 250
+
+// For debugging, uses a fixed message customisable in readBms()
+#define USE_FIXED_MESSAGE_FOR_DEBUGGING false
+
+// If no BMS response, or a garbage BMS response which failed validation, print results and send MQTT anyway?
+// Usually you won't want this.  It is good for debugging if for some reason values are not coming through.
+#define WHEN_BMS_READ_FAILED_PRINT_VALUES_TO_SERIAL_AND_SEND_TO_MQTT_IF_USING_ANYWAY false
+
+// The BMS may run a later firmware which exposes power as a value
+// This set to false will use voltage * current to derive power.  Set to true will use the reading.
+// I'd leave as true but if you get no power, try swapping to false
+#define SUPPORTS_NEW_COMMANDS true
+
+// If you don't want to poll the BMS and send to CAN unless a pin is given 3.3v, leave this as is
+//#define USE_SHORTING_PIN
+#define SHORTING_PIN 13
+
+
+#ifdef USING_WIFI_AND_MQTT
+// On boot will request a buffer size of (MAX_MQTT_PAYLOAD_SIZE + MQTT_HEADER_SIZE) for MQTT, and
+// MAX_MQTT_PAYLOAD_SIZE for building payloads.  If these fail and your device doesn't boot, you can assume you've set this too high.
+#define MAX_MQTT_PAYLOAD_SIZE 4096
+#define MIN_MQTT_PAYLOAD_SIZE 512
+#define MQTT_HEADER_SIZE 512
+
+// How frequently to send a response over MQTT
+// Default 10 seconds
+#define MQTT_SEND_INTERVAL 10000
+#endif
+// END OF ADVANCED SETTINGS
+
+
+
+
+
+// START OF FIXED SETTINGS, SHOULD NOT NEED MODIFYING
+
+// Set CS to GPIO5
+#define MCP2515_CS 5
+// Set INT to GPIO4 (Not needed, but coded in anyway)
+#define MCP2515_INT 26
+
 
 // Status will be posted to the following topic
 #define MQTT_BMS_DETAILS "/bms/details"
-
-
 #define MQTT_BMS_NOTENOUGHDATA "/bms/notenoughdata"
 #define MQTT_BMS_FAILEDCHECKSUM "/bms/failedchecksum"
 #define MQTT_BMS_FAILEDHEADER "/bms/failedheader"
@@ -102,28 +144,9 @@ License: GPL Version 3
 #define CAN_ERRORTYPE_CANFAILSEND 4
 #define CAN_ERRORTYPE_CANTXERRORCOUNT 5
 
-#endif
-
-
-
-
 // BMS RX and TX Pins
 #define BMS_RX_PIN 16
 #define BMS_TX_PIN 17
-
-
-// These timers are used in the main loop.
-// How frequently to poll BMS information and send via CAN
-#define BMS_QUERY_INTERVAL 1000
-
-// How long to wait before we give up waiting for a BMS response
-#define BMS_TIMEOUT 250
-
-
-
-
-
-// Fixed Parameters
 
 // Baud Rates
 #define BMS_BAUD_RATE 19200
@@ -145,17 +168,20 @@ License: GPL Version 3
 #define TEMPERATURE_SENSOR_3 4
 #define TEMPERATURE_SENSOR_4 5
 
-
-
-
-// How long a BMS message is, this is fixed at 1400 as per the AntBMS protocol
+// How long a BMS message is, this is fixed at 140 as per the AntBMS protocol
 #define BMS_MESSAGE_LENGTH 140
 
+// END OF FIXED SETTINGS
 
 
 
 
-// And code onwards
+
+
+
+
+
+// CODE ONWARDS
 
 
 
@@ -169,23 +195,11 @@ unsigned long _canFailureCounter = 0;
 
 
 
-
 #ifdef USE_WIFI_AND_MQTT
-
-// On boot will request a buffer size of (MAX_MQTT_PAYLOAD_SIZE + MQTT_HEADER_SIZE) for MQTT, and
-// MAX_MQTT_PAYLOAD_SIZE for building payloads.  If these fail and your device doesn't boot, you can assume you've set this too high.
-#define MAX_MQTT_PAYLOAD_SIZE 4096
-#define MIN_MQTT_PAYLOAD_SIZE 512
-#define MQTT_HEADER_SIZE 512
-
-// How frequently to send a response over MQTT
-#define MQTT_SEND_INTERVAL 10000
-
-
-// WiFi parameters
+// Main WiFi object
 WiFiClient _wifi;
 
-// MQTT parameters
+// Main MQTT object
 PubSubClient _mqtt(_wifi);
 
 // Buffer Size (and therefore payload size calc)
@@ -198,6 +212,7 @@ char* _mqttPayload;
 #endif
 
 
+// The main structure to store results from the BMS
 struct bmsResponse
 {
     uint16_t rawTotalVoltage;
@@ -234,19 +249,18 @@ struct bmsResponse
 };
 bmsResponse _receivedResponse;
 
-
-
-
-
-
-
-#ifdef USE_MCP_CAN
+// Main MCP_CAN object
 MCP_CAN CAN0(MCP2515_CS);
-#endif
 
 
 
-#ifdef USE_MCP_CAN
+
+/*
+printCanResultToSerialMCP()
+
+Prints the return code and description according to the MCP_CAN library.
+Extended for a custom id of -1 for reads.
+*/
 void printCanResultToSerialMCP(unsigned long id, byte canResult)
 {
     char msgString[128];
@@ -284,10 +298,12 @@ void printCanResultToSerialMCP(unsigned long id, byte canResult)
     }
     Serial.println("");
 }
-#endif
+
 
 
 /*
+lowByteOfUint16T()
+
 Returns low byte of a uint16_t, due to not being sure about inbuilt lowByte function.
 */
 uint8_t lowByteOfUint16T(uint16_t input)
@@ -296,6 +312,7 @@ uint8_t lowByteOfUint16T(uint16_t input)
 }
 
 /*
+highByteOfUint16T()
 Returns high byte of a uint16_t, due to not being sure about inbuilt highByte function.
 */
 uint8_t highByteOfUint16T(uint16_t input)
@@ -325,12 +342,12 @@ uint16_t calcChecksum(const uint8_t data[], const uint16_t len) {
 sendCanMessage()
 
 Sends appropriately formatted messages based on the BMS details read in over to CAN following the
-spec of Pylontech
+spec of Pylontech.  (Likely others too as I believe they all conform to the same spec.)
 
+With thanks to
 https://www.setfirelabs.com/green-energy/pylontech-can-reading-can-replication
 
 */
-
 bool sendCanMessage()
 {
     uint16_t SOH = 100; // SOH place holder
@@ -344,18 +361,20 @@ bool sendCanMessage()
     bool result = true;
 
 
-#ifdef USE_MCP_CAN
     uint8_t data[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
     byte canResult;
-    // Serial Output String Buffer
+    // Serial output string buffer
     char msgString[128];
     unsigned long id;
     byte len;
     byte ext = 0;
     
+
+
     if (result)
     {
+        // Send voltage and curent limits
         id = 0x351;
         len = 8;
         ext = 0;
@@ -399,6 +418,7 @@ bool sendCanMessage()
 
     if (result)
     {
+        // Send state of charge, state of health
         delay(2); // or 2
 
         id = 0x355;
@@ -446,6 +466,7 @@ bool sendCanMessage()
     {
         delay(2);
 
+        // Personal Notes
         // Multiplies voltage by 10 to convert into millivolts.  This likely makes sense, in my example 262 tenths of a voltage is increased to 2620 millivolts
         // But that goes against everything else which is reported in tenths
         // Why is current made negative?
@@ -496,6 +517,8 @@ bool sendCanMessage()
     if (result)
     {
         // Spec for Pylontech addresses this as 0x359
+        // Personal Notes
+        // Not implemented, always reports no error.
         delay(2);
         id = 0x359;
         len = 8;
@@ -539,6 +562,8 @@ bool sendCanMessage()
     if (result)
     {
         // Send the battery charge request packet even if empty?
+        // Personal Notes
+        // Not implemented, sends no charge requests, ever.
         delay(2);
         id = 0x35C;
         len = 8;
@@ -579,6 +604,8 @@ bool sendCanMessage()
 
     if (result)
     {
+        // Send the BMS name
+
         delay(2);
         id = 0x35E;
         len = 8;
@@ -621,6 +648,10 @@ bool sendCanMessage()
     /*
     if (result)
     {
+        // Personal Notes
+        // Not implemented in Pylontech/SOFAR, but can uncomment to send if needed
+
+        // Minimum and maximum cell temperatures and min and max cell voltages
         delay(2);
         id = 0x373;
         len = 8;
@@ -711,12 +742,9 @@ bool sendCanMessage()
 #ifdef USE_WIFI_AND_MQTT
         sendMqttState(CAN_ERRORTYPE_CANTXERRORCOUNT, 0, 0, 0, CAN0.errorCountTX());
 #endif
-
     }
 
 
-
-#endif
 
 
 
@@ -903,7 +931,11 @@ bool sendCanMessage()
 }
 
 
+/*
+printValuesToSerialAndSendToMQTTIfUsing()
 
+Nicely prints the results from the BMS to the serial port and, if using, sends to MQTT.
+*/
 void printValuesToSerialAndSendToMQTTIfUsing()
 {
     long milli_start = millis();
@@ -1086,7 +1118,7 @@ void printValuesToSerialAndSendToMQTTIfUsing()
 
 
 /*
-setup
+setup()
 
 The setup function runs once when you press reset or power the board
 */
@@ -1152,18 +1184,15 @@ void setup()
     mqttReconnect();
 #endif
 
-#ifdef USE_MCP_CAN
-
-    byte errorCode;
-    errorCode = CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ);
-
     // Trigger input
 #ifdef USE_SHORTING_PIN
     pinMode(SHORTING_PIN, INPUT_PULLDOWN);
     digitalWrite(SHORTING_PIN, LOW);
 #endif
 
-
+    // Kick off the CAN port
+    byte errorCode;
+    errorCode = CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ);
     while (errorCode != CAN_OK)
     {
         Serial.print("CAN configuration error: ");
@@ -1172,15 +1201,16 @@ void setup()
         errorCode = CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ);
     }
 
-    if (errorCode == 0) {
 
+    if (errorCode == 0)
+    {
         // One shot transmission
         CAN0.enOneShotTX();
 
-        // Since we do not set NORMAL mode, we are in loopback mode by default.
+        // Set NORMAL mode, we are in loopback mode by default.
         CAN0.setMode(MCP_NORMAL);
 
-        pinMode(MCP2515_INT, INPUT_PULLUP); // Configuring pin for /INT input
+        pinMode(MCP2515_INT, INPUT_PULLUP); // Configuring pin for /INT input, though interrupts not used in favour of a poll.
 
         Serial.println("MCP2515 Initialized Successfully!");
 
@@ -1188,15 +1218,15 @@ void setup()
     }
 
 
-
-#endif
-
-
     return;
 }
 
 
+/*
+loop()
 
+Main program loop
+*/
 void loop()
 {
     static unsigned long lastBmsQuery = 0;
@@ -1224,28 +1254,30 @@ void loop()
     shortingPinValue = HIGH;
 #endif
 
+    // If the interval has passed then read the BMS and onward send
     if (checkTimer(&lastBmsQuery, BMS_QUERY_INTERVAL) && shortingPinValue == HIGH)
     {
         readBms();
     }
     
     // And check for incoming messages - Not required but useful for debugging nonetheless
-#ifdef USE_MCP_CAN
+    // It is probably right to consume them out of the buffer too.
     checkReceiveMCPCAN();
-#endif
 
     delay(10);
 }
 
 
 
-#ifdef USE_MCP_CAN
 /*
-Checks for incoming messages from the inverter... Does nothing apart from dump to serial
+checkReceiveMCPCAN()
+
+Checks for incoming messages from the inverter.
+
+As we don't need to action anything from the inverter, this does nothing apart from dump to serial for reference.
 */
 void checkReceiveMCPCAN()
 {
-
     byte canResult;
 
     // CAN RX Variables
@@ -1255,15 +1287,19 @@ void checkReceiveMCPCAN()
     int msgCount = 0;
     uint8_t rxBuf[8];
 
-    // Serial Output String Buffer
+    // Serial output string buffer
     char msgString[128];
  
-    
     if (CAN0.checkReceive() == CAN_MSGAVAIL)
     {
+        // I tried flirting with the interrupt pin however it wasn't worth it when a quick checkReceive can action the same thing
+        // Given the simplicity of this project it wasn't worth coding in interrupt handling.
         //Serial.println(digitalRead(MCP2515_INT));
 
+        // Read the message
         canResult = CAN0.readMsgBuf(&rxId, &ext, &len, rxBuf);
+
+        // Consume any which are waiting in order
         while (canResult == CAN_OK)
         {
             msgCount++;
@@ -1278,6 +1314,7 @@ void checkReceiveMCPCAN()
             }
             else
             {
+                // Get the contents
                 for (byte i = 0; i < len; i++)
                 {
                     sprintf(msgString, " 0x%.2X", rxBuf[i]);
@@ -1301,6 +1338,7 @@ void checkReceiveMCPCAN()
         }
 
         /*
+        // For testing, flashed the LED visually so I could see if CAN comms was a success
         for (int i = 0; i <= 3; i++)
         {
             delay(25);
@@ -1313,13 +1351,11 @@ void checkReceiveMCPCAN()
 
     return;
 }
-#endif
-
 
 
 
 /*
-checkTimer
+checkTimer()
 
 Check to see if the elapsed interval has passed since the passed in millis() value. If it has, return true and update the lastRun.
 Note that millis() overflows after 50 days, so we need to deal with that too... in our case we just zero the last run, which means the timer
@@ -1344,12 +1380,13 @@ bool checkTimer(unsigned long* lastRun, unsigned long interval)
 
 
 /*
+readBms()
+
 Grabs data from the BMS and onward posts to CAN
 */
 void readBms()
 {
     bool goodCrc = false;
-   // bool canResult = false;
     bool goodHeader = true;
 
     // AntBms Request Data Command
@@ -1361,6 +1398,7 @@ void readBms()
     // Buffer for incoming data
     byte incomingBuffer[BMS_MESSAGE_LENGTH] = { 0 };
 
+    // Testing fixed messages, see USE_FIXED_MESSAGE_FOR_DEBUGGING above.
   //byte fixedTestMessage[BMS_MESSAGE_LENGTH] = {0xAA, 0x55, 0xAA, 0xFF, 0x01, 0x06, 0x0C, 0xCF, 0x0C, 0xC9, 0x0C, 0xCB, 0x0C, 0xCF, 0x0C, 0xCF, 0x0C, 0xD0, 0x0C, 0xCF, 0x0C, 0xC3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xFA, 0xF0, 0x80, 0x00, 0x0B, 0xEB, 0xC2, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0xE8, 0x28, 0x00, 0x0E, 0x00, 0x0D, 0x00, 0x0C, 0x00, 0x0A, 0xFF, 0xD8, 0xFF, 0xD8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x27, 0x0F, 0x06, 0x0C, 0xD0, 0x10, 0x0C, 0xC3, 0x0C, 0xCC, 0x08, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x02, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0xD3};
     byte fixedTestMessage[BMS_MESSAGE_LENGTH] = {0xAA, 0x55, 0xAA, 0xFF, 0x02, 0x30, 0x09, 0xE4, 0x09, 0xE5, 0x09, 0xE5, 0x09, 0xE4, 0x09, 0xE6, 0x09, 0xE6, 0x09, 0xC4, 0x09, 0xE8, 0x09, 0xE8, 0x09, 0xE9, 0x09, 0xE8, 0x09, 0xE9, 0x09, 0xFE, 0x0A, 0x0B, 0x0A, 0x05, 0x0A, 0x09, 0x0A, 0x06, 0x0A, 0x0D, 0x09, 0xDE, 0x0A, 0x0A, 0x0A, 0x04, 0x0A, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2B, 0x63, 0x07, 0x27, 0x0E, 0x00, 0x06, 0xF4, 0xFA, 0x25, 0x00, 0xE8, 0xAF, 0xE2, 0x01, 0xFF, 0xC9, 0x8B, 0x00, 0x14, 0x00, 0x13, 0x00, 0x11, 0x00, 0x11, 0x00, 0x12, 0x00, 0x12, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0xF0, 0x12, 0x0A, 0x0D, 0x07, 0x09, 0xC4, 0x09, 0xF1, 0x16, 0xFF, 0xFF, 0x00, 0x7E, 0x00, 0x7A, 0x02, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1D, 0x8D};
 
@@ -1389,7 +1427,7 @@ void readBms()
     }
 
     // Send the request command
-    _bms.write(requestCommand, sizeof(requestCommand)); // while (Serial2.available()) {  Serial.print(Serial2.read()); };
+    _bms.write(requestCommand, sizeof(requestCommand));
     _bms.flush(); // Ensure sent on its way
 
     bytesReceived = _bms.readBytes(incomingBuffer, BMS_MESSAGE_LENGTH); // Will read up to 140 chars or timeout
@@ -1401,7 +1439,7 @@ void readBms()
         memcpy(incomingBuffer, fixedTestMessage, sizeof(incomingBuffer));
     }
 
-
+    // Dump the results to serial
     Serial.println("--- Start Raw Bytes ---");
     for (uint8_t i = 0; i < sizeof(incomingBuffer); i++)
     {
@@ -1422,7 +1460,6 @@ void readBms()
         // Send an MQTT saying data not received
         sendMqttState(BMS_ERRORTYPE_NOTENOUGHDATA, bytesReceived, 0, 0, 0);
 #endif
-
     }
 
 
@@ -1439,12 +1476,12 @@ void readBms()
         // Send an MQTT saying failed checksum
         sendMqttState(BMS_ERRORTYPE_FAILEDCHECKSUM, 0, 0, 0, 0);
 #endif
-        /*
-        if (PRINT_SERIAL_AND_SEND_MQTT_ANYWAY)
+
+        // User wants to print garbage to serial, possibly for debugging
+        if (WHEN_BMS_READ_FAILED_PRINT_VALUES_TO_SERIAL_AND_SEND_TO_MQTT_IF_USING_ANYWAY)
         {
             printValuesToSerialAndSendToMQTTIfUsing();
         }
-        */
     }
     else if(!(incomingBuffer[0] == startMark[0] && incomingBuffer[1] == startMark[1] && incomingBuffer[2] == startMark[2] && incomingBuffer[3] == startMark[3]))
     {
@@ -1457,12 +1494,12 @@ void readBms()
         sendMqttState(BMS_ERRORTYPE_FAILEDHEADER, 0, 0, 0, 0);
 #endif
 
-        /*
-        if (PRINT_SERIAL_AND_SEND_MQTT_ANYWAY)
+        // User wants to print garbage to serial, possibly for debugging
+        if (WHEN_BMS_READ_FAILED_PRINT_VALUES_TO_SERIAL_AND_SEND_TO_MQTT_IF_USING_ANYWAY)
         {
             printValuesToSerialAndSendToMQTTIfUsing();
         }
-        */
+
     }
     else
     {
@@ -1547,6 +1584,7 @@ void readBms()
         _receivedResponse.chargeMosfetStatus = raw_chargeMosfetStatus; // uint8_t
 
         /*
+        // Potential code to value lookup for the charge mosfet status
         if (raw_chargeMosfetStatus < chargeMosfetStatus_SIZE)
         {
             _receivedResponse.chargeMosfetStatus_text = chargeMosfetStatus[raw_chargeMosfetStatus]; // Char Pointer
@@ -1564,9 +1602,10 @@ void readBms()
         _receivedResponse.chargeMosfetStatus = raw_dischargeMosfetStatus; // uint8_t
 
         /*
-        if (raw_dischargeMosfetStatus < DISchargeMosfetStatus_SIZE)
+        // Potential code to value lookup for the discharge mosfet status
+        if (raw_dischargeMosfetStatus < dischargeMosfetStatus_SIZE)
         {
-            _receivedResponse.dischargeMosfetStatus_text = DISchargeMosfetStatus[raw_dischargeMosfetStatus]; // Char Pointer
+            _receivedResponse.dischargeMosfetStatus_text = dischargeMosfetStatus[raw_dischargeMosfetStatus]; // Char Pointer
         }
         else
         {
@@ -1581,6 +1620,7 @@ void readBms()
         _receivedResponse.balancerSwitch = (bool)(raw_balancerStatus == 0x04); // bool
 
         /*
+        // Potential code to value lookup for the balancer status
         if (raw_balancerStatus < balancerStatus_SIZE)
         {
             _receivedResponse.balancerStatus_text = balancerStatus[raw_balancerStatus]; // Char Pointer
@@ -1597,11 +1637,13 @@ void readBms()
         //  111   0x00 0x00 0x00 0x00: Current power         0W                             1.0 W
         if (SUPPORTS_NEW_COMMANDS)
         {
-            _receivedResponse.power = totalVoltage * current;
+            // Use the reading direct from the BMS.  Presumably earlier firmwares just output zero here?
+            _receivedResponse.power = (float)(int32_t)ant_get_32bit(111); // float
         }
         else
         {
-            _receivedResponse.power = (float)(int32_t)ant_get_32bit(111); // float
+            // Derive power as volts * amps
+            _receivedResponse.power = totalVoltage * current;
         }
 
         //  115   0x0D: Cell with the highest voltage        Cell 13
@@ -1639,7 +1681,11 @@ void readBms()
 
 
 
+
+
         /*
+        // Older implementation by JuWorkshop
+
         tempCalc = ((((uint8_t)incomingBuffer[70]) << 24) + (((uint8_t)incomingBuffer[71]) << 16) + (((uint8_t)incomingBuffer[72]) << 8) + ((uint8_t)incomingBuffer[73]));
 
         if (tempCalc > 2147483648)
