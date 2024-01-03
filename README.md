@@ -193,7 +193,7 @@ Where %i is the number of errors since the device was booted.
 
 ## Reasons Underpinning Design Choices
 ### Why not use the internal ESP32 CAN controller?
-I know the ESP32 has a CAN controller inbuilt, meaning in theory it is possible to get away with just buying the transceiver.  That said, CAN should run at 5V, and the transceiver only modules mostly run at 3.3V (outside of spec) and are of questionable quality - ala [this garbage SN65HVD230](https://www.ebay.co.uk/itm/266023445479).  Not all transceivers have CAN termination functionality built in (which we need) and further, the libaries out there for CAN using these transceivers (i.e. Sandeep Mistry's) are old and deprecated.  I didn't have success with a multitude of transceivers and libraries.  The 5V MCP2515 with the MCP_CAN library worked straight away and has been rock solid in performance.  Given the cost was around £5 it really wasn't worth the hassle to get a second rate approach working.
+I know the ESP32 has a CAN controller inbuilt, meaning in theory it is possible to get away with just buying the transceiver.  That said, CAN should run at 5V, and the transceiver only modules mostly run at 3.3V (outside of spec) and are of questionable quality - ala [this garbage SN65HVD230](https://www.ebay.co.uk/itm/266023445479).  Not all transceivers have CAN termination functionality built in (which we need) and further, the libraries out there for CAN using these transceivers (i.e. Sandeep Mistry's) are old and deprecated.  I didn't have success with a multitude of transceivers and libraries.  The 5V MCP2515 with the MCP_CAN library worked straight away and has been rock solid in performance.  Given the cost was around £5 it really wasn't worth the hassle to get a second rate approach working.
 
 
 I recognise that the MCP2515 module works at 5V and the ESP32's input pins are only tolerant of 3.3V, as such, we need to protect one output pin from the MCP2515 to the ESP32 - MISO (Master In, Slave Out) by using a bi-directional 3.3V - 5V logic shifter.  MOSI (Master Out, Slave In), CLK and CS are all output pins and so we don't need to protect those.  INT is not used.
@@ -325,7 +325,7 @@ The ESP32 pinout is here for your reference and you can click on it to open a la
 17. Use a M-M (one end cut off) jumper wire to connect the GND rail to one of the cores of the 3 (or 2) core cable
 18. Use a M-M (one end cut off) jumper wire to connect GPIO1 (TX0) to one of the cores of the 3 core cable (if not using a display)
 19. Use a M-M (one end cut off) jumper wire to connect GPIO3 (RX0) to one of the cores of the 3 (or 2) core cable
-
+20. Use a F-F jumper wire to bridge the terminating resistor port on the MCP2515
 
 And here is the finished design on a breadboard ready for the GND/TX/RX comm wires to the BMS and CAN H and CAN L to the inverter:
 
