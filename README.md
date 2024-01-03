@@ -7,7 +7,7 @@ The project needs very little soldering, making use of off-the-shelf components 
 It's designed to run on an ESP32 microcontroller with a small amount of supporting components.  Estimated cost to build is around £15.
 
 
-The project works by hooking into the data which is sent between the AntBMS and its optional display.  It packages up the data in a format suitable for CAN communications and fires it along the CAN line to the inverter.  It is a relatively simple (in the grand scheme of things) premise but works to good effect.  You don't need the optional AntBMS display for this to work.
+The project was born out of the fact that trying to get a DIY battery to work smartly with an inverter is essentially impossible.  The bulk have no choice but to rely on Lead Acid settings with voltages, currents and what not set with tolerances to best guess when full and empty.  The project works by hooking into the data which is sent between the AntBMS and its optional display.  It packages up the data in a format suitable for CAN communications and fires it along the CAN line to the inverter.  It is a relatively simple (in the grand scheme of things) premise but works to good effect.  You don't need the optional AntBMS display for this to work.
 
 
 This project extends a heavy thanks to the work done by the following talented individuals:
