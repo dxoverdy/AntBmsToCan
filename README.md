@@ -1,5 +1,5 @@
 # AntBmsToCan
-## An ESP32 and MCP2515 based DIY project to enable CAN-bus comms between inverters and DIY solar batteries which use AntBMS.
+## An ESP32 and MCP2515/TJA1050 CAN module based DIY project to enable CAN-bus comms between inverters and DIY solar batteries which use AntBMS.
 
 The project needs very little soldering, making use of off-the-shelf components and jumper wires to do most of the heavy lifting.  That said, if you are making your own solar battery the chances are you are not adverse to soldering anyway.  The project makes use of robust and reliable components in order to ensure solid communication between the BMS and the inverter.  I have been running it continually now for three months without hiccup.  It supports, for use during testing and configuration only, WiFi and MQTT so that values, errors and other output can be easily consumed to help debugging - ideal when you don't have the means to run a laptop or desktop over to where your battery lives.
 
@@ -114,13 +114,13 @@ By default, every 10 seconds a message will be sent out on this topic.  The payl
     "deltaCellVoltage": %d,
     "averageCellVoltage": %d,
     "batteryStrings": %d,
-    "_bmsValidResponseCounter": %d,
-    "_bmsInvalidResponseCounter": %d,
-    "_canSuccessCounter": %d,
-    "_canFailureCounter": %d
+    "_bmsValidResponseCounter": %c,
+    "_bmsInvalidResponseCounter": %c,
+    "_canSuccessCounter": %c,
+    "_canFailureCounter": %c
 }
 ```
-Where %d is the value from your AntBMS at the time it was read out.
+Where %d is the value from your AntBMS at the time it was read out and %c is the value from AntBmsToCan.
 
 ## Errors
 In addition, The MQTT topics to subscribe to are:
@@ -193,7 +193,7 @@ Where %i is the number of errors since the device was booted.
 
 ## Reasons Underpinning Design Choices
 ### Why not use the internal ESP32 CAN controller?
-I know the ESP32 has a CAN controller inbuilt, meaning in theory it is possible to get away with just buying the transceiver.  That said, CAN should run at 5V, and the transceiver only modules mostly run at 3.3V (outside of spec) and are of questionable quality - ala [this garbage SN65HVD230](https://www.ebay.co.uk/itm/266023445479).  Not all transceivers have CAN termination functionality built in (which we need) and further, the libraries out there for CAN using these transceivers (i.e. Sandeep Mistry's) are old and deprecated.  I didn't have success with a multitude of transceivers and libraries.  The 5V MCP2515 with the MCP_CAN library worked straight away and has been rock solid in performance.  Given the cost was around £5 it really wasn't worth the hassle to get a second rate approach working.
+I know the ESP32 has a CAN controller inbuilt, meaning in theory it is possible to get away with just buying the transceiver.  That said, CAN should run at 5V, and the transceiver only modules mostly run at 3.3V (outside of spec) and are of questionable quality - ala [this garbage SN65HVD230](https://www.ebay.co.uk/itm/266023445479).  Not all transceivers have CAN termination functionality built in (which we need) and further, the libraries out there for CAN using these transceivers (i.e. Sandeep Mistry's) are old and deprecated.  I didn't have success with a multitude of transceivers and libraries.  The 5V MCP2515/TJA1050 CAN module with the MCP_CAN library worked straight away and has been rock solid in performance.  Given the cost was around £5 it really wasn't worth the hassle to get a second rate approach working.
 
 
 I recognise that the MCP2515 module works at 5V and the ESP32's input pins are only tolerant of 3.3V, as such, we need to protect one output pin from the MCP2515 to the ESP32 - MISO (Master In, Slave Out) by using a bi-directional 3.3V - 5V logic shifter.  MOSI (Master Out, Slave In), CLK and CS are all output pins and so we don't need to protect those.  INT is not used.
@@ -272,7 +272,7 @@ You can buy female headers [here](https://www.ebay.co.uk/itm/354733633355)
 ### 40 PIN DUPONT WIRE BREADBOARD JUMPER WIRES RIBBON CABLES M-F/M-M/F-F 10/20/30CM
 <img src="Pics/JumperWires.jpg" alt="Jumper Wires" width="500"/>
 
-You can buy a selection of jumper wires (though I only use Female-Female between 10cm and 15cm) [here](https://www.ebay.co.uk/itm/223760125560)
+You can buy a selection of jumper wires [here](https://www.ebay.co.uk/itm/223760125560)
 
 
 
@@ -423,6 +423,16 @@ My implementation, together with a Sofar2MQTT on a prototyping board all in a pr
 
 Best of luck!
 
+
+
+# Future Development Potential
+For reference, the Pylontech CAN protocol specification document is [here](Pics/pylon-bms-protocol-can-can-20161103.pdf).
+
+
+- Remove WiFi/MQTT blocking in favour of "If WiFi/MQTT available, send, otherwise skip" in order to relay data from AntBmsToCan continually, not just in testing
+- Send force charge request to CAN message 0x35C when a discharge tolerance has been reached
+- Send alarms and warnings to CAN message 0x359
+- Send minimum and maximum cell temperature of the pack to CAN message 0x359
 
 # AntBmsToCan Around The World
 If you build your own AntBmsToCan, be sure to send me pictures of it in action so I can add it to this page!  I'd love to hear from you.

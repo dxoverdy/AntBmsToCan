@@ -379,6 +379,7 @@ bool sendCanMessage()
         len = 8;
         ext = 0;
 
+
         // In the example, 2575 * 22 cells = 56650 / 100 = 566 tenths of a volt.
         data[0] = lowByteOfUint16T(uint16_t((CHARGE_VOLTAGE_LIMIT_CVL_IN_MILLIVOLTS * _receivedResponse.cells) / 100));
         data[1] = highByteOfUint16T(uint16_t((CHARGE_VOLTAGE_LIMIT_CVL_IN_MILLIVOLTS * _receivedResponse.cells) / 100));
@@ -386,8 +387,7 @@ bool sendCanMessage()
         data[3] = highByteOfUint16T(uint16_t(CHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP)); // chargecurrent
         data[4] = lowByteOfUint16T(uint16_t(DISCHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP)); // dischargecurrent
         data[5] = highByteOfUint16T(uint16_t(DISCHARGE_CURRENT_LIMIT_IN_TENTHS_OF_AN_AMP)); // dischargecurrent
-
-        // Debatable if these needed
+        // Debatable if this is needed
         data[6] = lowByteOfUint16T(uint16_t((DISCHARGE_VOLTAGE_LIMIT_DVL_IN_MILLIVOLTS * _receivedResponse.cells) / 100));
         data[7] = highByteOfUint16T(uint16_t((DISCHARGE_VOLTAGE_LIMIT_DVL_IN_MILLIVOLTS * _receivedResponse.cells) / 100));
 
@@ -644,6 +644,12 @@ bool sendCanMessage()
         }
     }
     
+
+
+
+
+
+
 
     /*
     if (result)
